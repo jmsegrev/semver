@@ -1,11 +1,11 @@
 {
-  "author": "blang",
+  "author": "jmsegrev",
   "bugs": {
-    "URL": "https://github.com/blang/semver/issues",
-    "url": "https://github.com/blang/semver/issues"
+    "URL": "https://github.com/jmsegrev/semver/issues",
+    "url": "https://github.com/jmsegrev/semver/issues"
   },
   "gx": {
-    "dvcsimport": "github.com/blang/semver"
+    "dvcsimport": "github.com/jmsegrev/semver"
   },
   "gxVersion": "0.10.0",
   "language": "go",
