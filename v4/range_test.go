@@ -295,7 +295,7 @@ func TestExpandWildcardVersion(t *testing.T) {
 }
 
 func TestVersionRangeToRange(t *testing.T) {
-	vr := versionRange{
+	vr := VersionRange{
 		v: MustParse("1.2.3"),
 		c: compLT,
 	}
@@ -488,7 +488,7 @@ func TestParseRange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		r, err := ParseRange(tc.i)
+		r, _, err := ParseRange(tc.i)
 		if err != nil && tc.t != nil {
 			t.Errorf("Error parsing range %q: %s", tc.i, err)
 			continue
@@ -505,7 +505,7 @@ func TestParseRange(t *testing.T) {
 
 func TestMustParseRange(t *testing.T) {
 	testCase := ">1.2.2 <1.2.4 || >=2.0.0 <3.0.0"
-	r := MustParseRange(testCase)
+	r, _ := MustParseRange(testCase)
 	if !r(MustParse("1.2.3")) {
 		t.Errorf("Unexpected range behavior on MustParseRange")
 	}
@@ -517,7 +517,7 @@ func TestMustParseRange_panic(t *testing.T) {
 			t.Errorf("Should have panicked")
 		}
 	}()
-	_ = MustParseRange("invalid version")
+	_, _ = MustParseRange("invalid version")
 }
 
 func BenchmarkRangeParseSimple(b *testing.B) {
@@ -525,7 +525,7 @@ func BenchmarkRangeParseSimple(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _ = ParseRange(VERSION)
+		_, _, _ = ParseRange(VERSION)
 	}
 }
 
@@ -534,7 +534,7 @@ func BenchmarkRangeParseAverage(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _ = ParseRange(VERSION)
+		_, _, _ = ParseRange(VERSION)
 	}
 }
 
@@ -543,13 +543,13 @@ func BenchmarkRangeParseComplex(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _ = ParseRange(VERSION)
+		_, _, _ = ParseRange(VERSION)
 	}
 }
 
 func BenchmarkRangeMatchSimple(b *testing.B) {
 	const VERSION = ">1.0.0"
-	r, _ := ParseRange(VERSION)
+	r, _, _ := ParseRange(VERSION)
 	v := MustParse("2.0.0")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -560,7 +560,7 @@ func BenchmarkRangeMatchSimple(b *testing.B) {
 
 func BenchmarkRangeMatchAverage(b *testing.B) {
 	const VERSION = ">=1.0.0 <2.0.0"
-	r, _ := ParseRange(VERSION)
+	r, _, _ := ParseRange(VERSION)
 	v := MustParse("1.2.3")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -571,7 +571,7 @@ func BenchmarkRangeMatchAverage(b *testing.B) {
 
 func BenchmarkRangeMatchComplex(b *testing.B) {
 	const VERSION = ">=1.0.0 <2.0.0 || >=3.0.1 <4.0.0 !=3.0.3 || >=5.0.0"
-	r, _ := ParseRange(VERSION)
+	r, _, _ := ParseRange(VERSION)
 	v := MustParse("5.0.1")
 	b.ReportAllocs()
 	b.ResetTimer()
