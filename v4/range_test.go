@@ -1,6 +1,7 @@
 package semver
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -145,7 +146,7 @@ func TestBuildVersionRange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		if r, err := buildVersionRange(tc.opStr, tc.vStr); err != nil {
+		if r, err := buildRangeVersion(tc.opStr, tc.vStr); err != nil {
 			if tc.c != nil {
 				t.Errorf("Invalid for case %q: Expected %q, got error %q", strings.Join([]string{tc.opStr, tc.vStr}, ""), tc.v, err)
 			}
@@ -153,8 +154,8 @@ func TestBuildVersionRange(t *testing.T) {
 			t.Errorf("Invalid for case %q: got nil", strings.Join([]string{tc.opStr, tc.vStr}, ""))
 		} else {
 			// test version
-			if tv := MustParse(tc.v); !r.v.EQ(tv) {
-				t.Errorf("Invalid for case %q: Expected version %q, got: %q", strings.Join([]string{tc.opStr, tc.vStr}, ""), tv, r.v)
+			if tv := MustParse(tc.v); !r.Version.EQ(tv) {
+				t.Errorf("Invalid for case %q: Expected version %q, got: %q", strings.Join([]string{tc.opStr, tc.vStr}, ""), tv, r.Version)
 			}
 			// test comparator
 			if r.c == nil {
@@ -295,11 +296,14 @@ func TestExpandWildcardVersion(t *testing.T) {
 }
 
 func TestVersionRangeToRange(t *testing.T) {
-	vr := VersionRange{
-		v: MustParse("1.2.3"),
-		c: compLT,
+	vr := RangeVersion{
+		Version: MustParse("1.2.3"),
+		c:       compLT,
 	}
-	rf := vr.rangeFunc()
+	rf := func(v Version) bool {
+		return vr.Compare(v)
+	}
+	fmt.Println(vr)
 	if !rf(MustParse("1.2.2")) || rf(MustParse("1.2.3")) {
 		t.Errorf("Invalid conversion to range func")
 	}
@@ -309,20 +313,20 @@ func TestRangeAND(t *testing.T) {
 	v := MustParse("1.2.2")
 	v1 := MustParse("1.2.1")
 	v2 := MustParse("1.2.3")
-	rf1 := Range(func(v Version) bool {
+	rf1 := &Range{includes: func(v Version) bool {
 		return v.GT(v1)
-	})
-	rf2 := Range(func(v Version) bool {
+	}}
+	rf2 := &Range{includes: func(v Version) bool {
 		return v.LT(v2)
-	})
+	}}
 	rf := rf1.AND(rf2)
-	if rf(v1) {
+	if rf.Includes(v1) {
 		t.Errorf("Invalid rangefunc, accepted: %s", v1)
 	}
-	if rf(v2) {
+	if rf.Includes(v2) {
 		t.Errorf("Invalid rangefunc, accepted: %s", v2)
 	}
-	if !rf(v) {
+	if !rf.Includes(v) {
 		t.Errorf("Invalid rangefunc, did not accept: %s", v)
 	}
 }
@@ -338,15 +342,15 @@ func TestRangeOR(t *testing.T) {
 	}
 	v1 := MustParse("1.2.1")
 	v2 := MustParse("1.2.3")
-	rf1 := Range(func(v Version) bool {
+	rf1 := &Range{includes: func(v Version) bool {
 		return v.LT(v1)
-	})
-	rf2 := Range(func(v Version) bool {
+	}}
+	rf2 := &Range{includes: func(v Version) bool {
 		return v.GT(v2)
-	})
+	}}
 	rf := rf1.OR(rf2)
 	for _, tc := range tests {
-		if r := rf(tc.v); r != tc.b {
+		if r := rf.Includes(tc.v); r != tc.b {
 			t.Errorf("Invalid for case %q: Expected %t, got %t", tc.v, tc.b, r)
 		}
 	}
@@ -488,14 +492,14 @@ func TestParseRange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		r, _, err := ParseRange(tc.i)
+		r, err := ParseRange(tc.i)
 		if err != nil && tc.t != nil {
 			t.Errorf("Error parsing range %q: %s", tc.i, err)
 			continue
 		}
 		for _, tvc := range tc.t {
 			v := MustParse(tvc.v)
-			if res := r(v); res != tvc.b {
+			if res := r.Includes(v); res != tvc.b {
 				t.Errorf("Invalid for case %q matching %q: Expected %t, got: %t", tc.i, tvc.v, tvc.b, res)
 			}
 		}
@@ -505,8 +509,8 @@ func TestParseRange(t *testing.T) {
 
 func TestMustParseRange(t *testing.T) {
 	testCase := ">1.2.2 <1.2.4 || >=2.0.0 <3.0.0"
-	r, _ := MustParseRange(testCase)
-	if !r(MustParse("1.2.3")) {
+	r := MustParseRange(testCase)
+	if !r.Includes(MustParse("1.2.3")) {
 		t.Errorf("Unexpected range behavior on MustParseRange")
 	}
 }
@@ -517,7 +521,7 @@ func TestMustParseRange_panic(t *testing.T) {
 			t.Errorf("Should have panicked")
 		}
 	}()
-	_, _ = MustParseRange("invalid version")
+	_ = MustParseRange("invalid version")
 }
 
 func BenchmarkRangeParseSimple(b *testing.B) {
@@ -525,7 +529,7 @@ func BenchmarkRangeParseSimple(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _, _ = ParseRange(VERSION)
+		_, _ = ParseRange(VERSION)
 	}
 }
 
@@ -534,7 +538,7 @@ func BenchmarkRangeParseAverage(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _, _ = ParseRange(VERSION)
+		_, _ = ParseRange(VERSION)
 	}
 }
 
@@ -543,39 +547,39 @@ func BenchmarkRangeParseComplex(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, _, _ = ParseRange(VERSION)
+		_, _ = ParseRange(VERSION)
 	}
 }
 
 func BenchmarkRangeMatchSimple(b *testing.B) {
 	const VERSION = ">1.0.0"
-	r, _, _ := ParseRange(VERSION)
+	r, _ := ParseRange(VERSION)
 	v := MustParse("2.0.0")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		r(v)
+		r.Includes(v)
 	}
 }
 
 func BenchmarkRangeMatchAverage(b *testing.B) {
 	const VERSION = ">=1.0.0 <2.0.0"
-	r, _, _ := ParseRange(VERSION)
+	r, _ := ParseRange(VERSION)
 	v := MustParse("1.2.3")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		r(v)
+		r.Includes(v)
 	}
 }
 
 func BenchmarkRangeMatchComplex(b *testing.B) {
 	const VERSION = ">=1.0.0 <2.0.0 || >=3.0.1 <4.0.0 !=3.0.3 || >=5.0.0"
-	r, _, _ := ParseRange(VERSION)
+	r, _ := ParseRange(VERSION)
 	v := MustParse("5.0.1")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		r(v)
+		r.Includes(v)
 	}
 }

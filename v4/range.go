@@ -52,37 +52,55 @@ var (
 	}
 )
 
-type VersionRange struct {
-	v Version
-	c comparator
-}
-
-// rangeFunc creates a Range from the given VersionRange.
-func (vr *VersionRange) rangeFunc() Range {
-	return Range(func(v Version) bool {
-		return vr.c(v, vr.v)
-	})
-}
-
 // Range represents a range of versions.
 // A Range can be used to check if a Version satisfies it:
 //
 //	range, err := semver.ParseRange(">1.0.0 <2.0.0")
 //	range(semver.MustParse("1.1.1") // returns true
-type Range func(Version) bool
+type inRange func(Version) bool
 
 // OR combines the existing Range with another Range using logical OR.
-func (rf Range) OR(f Range) Range {
-	return Range(func(v Version) bool {
+func (rf inRange) OR(f inRange) inRange {
+	return inRange(func(v Version) bool {
 		return rf(v) || f(v)
 	})
 }
 
 // AND combines the existing Range with another Range using logical AND.
-func (rf Range) AND(f Range) Range {
-	return Range(func(v Version) bool {
+func (rf inRange) AND(f inRange) inRange {
+	return inRange(func(v Version) bool {
 		return rf(v) && f(v)
 	})
+}
+
+type RangeVersion struct {
+	Version Version
+	c       comparator
+}
+
+func (r *RangeVersion) Compare(v Version) bool {
+	return r.c(v, r.Version)
+}
+
+type Range struct {
+	Versions []RangeVersion
+	includes inRange
+}
+
+func (r *Range) Includes(v Version) bool {
+	return r.includes(v)
+}
+
+// OR combines the existing Range with another Range using logical OR.
+func (r *Range) OR(rn *Range) *Range {
+	r.includes = r.includes.OR(rn.Includes)
+	return r
+}
+
+// AND combines the existing Range with another Range using logical AND.
+func (r *Range) AND(rn *Range) *Range {
+	r.includes = r.includes.AND(rn.Includes)
+	return r
 }
 
 // ParseRange parses a range and returns a Range.
@@ -109,47 +127,49 @@ func (rf Range) AND(f Range) Range {
 // Ranges can be combined by both AND and OR
 //
 //   - `>1.0.0 <2.0.0 || >3.0.0 !4.2.1` would match `1.2.3`, `1.9.9`, `3.1.1`, but not `4.2.1`, `2.1.1`
-func ParseRange(s string) (Range, Versions, error) {
+func ParseRange(s string) (*Range, error) {
 	parts := splitAndTrim(s)
 	orParts, err := splitORParts(parts)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	expandedParts, err := expandWildcardVersion(orParts)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	var orFn Range
-	var versions Versions
+	var or inRange
+	var versions []RangeVersion
 	for _, p := range expandedParts {
-		var andFn Range
+		var and inRange
 		for _, ap := range p {
 			opStr, vStr, err := splitComparatorVersion(ap)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			vr, err := buildVersionRange(opStr, vStr)
+			vr, err := buildRangeVersion(opStr, vStr)
 			if err != nil {
-				return nil, nil, fmt.Errorf("Could not parse Range %q: %s", ap, err)
+				return nil, fmt.Errorf("Could not parse Range %q: %s", ap, err)
 			}
-			rf := vr.rangeFunc()
-			versions = append(versions, vr.v)
+			c := func(v Version) bool {
+				return vr.Compare(v)
+			}
+			versions = append(versions, *vr)
 
 			// Set function
-			if andFn == nil {
-				andFn = rf
+			if and == nil {
+				and = c
 			} else { // Combine with existing function
-				andFn = andFn.AND(rf)
+				and = and.AND(c)
 			}
 		}
-		if orFn == nil {
-			orFn = andFn
+		if or == nil {
+			or = and
 		} else {
-			orFn = orFn.OR(andFn)
+			or = or.OR(and)
 		}
 
 	}
-	return orFn, versions, nil
+	return &Range{versions, or}, nil
 }
 
 // splitORParts splits the already cleaned parts by '||'.
@@ -175,8 +195,8 @@ func splitORParts(parts []string) ([][]string, error) {
 }
 
 // buildVersionRange takes a slice of 2: operator and version
-// and builds a VersionRange, otherwise an error.
-func buildVersionRange(opStr, vStr string) (*VersionRange, error) {
+// and builds a RangeVersion, otherwise an error.
+func buildRangeVersion(opStr, vStr string) (*RangeVersion, error) {
 	c := parseComparator(opStr)
 	if c == nil {
 		return nil, fmt.Errorf("Could not parse comparator %q in %q", opStr, strings.Join([]string{opStr, vStr}, ""))
@@ -186,9 +206,9 @@ func buildVersionRange(opStr, vStr string) (*VersionRange, error) {
 		return nil, fmt.Errorf("Could not parse version %q in %q: %s", vStr, strings.Join([]string{opStr, vStr}, ""), err)
 	}
 
-	return &VersionRange{
-		v: v,
-		c: c,
+	return &RangeVersion{
+		Version: v,
+		c:       c,
 	}, nil
 
 }
@@ -409,10 +429,10 @@ func parseComparator(s string) comparator {
 }
 
 // MustParseRange is like ParseRange but panics if the range cannot be parsed.
-func MustParseRange(s string) (Range, Versions) {
-	r, v, err := ParseRange(s)
+func MustParseRange(s string) *Range {
+	r, err := ParseRange(s)
 	if err != nil {
 		panic(`semver: ParseRange(` + s + `): ` + err.Error())
 	}
-	return r, v
+	return r
 }
